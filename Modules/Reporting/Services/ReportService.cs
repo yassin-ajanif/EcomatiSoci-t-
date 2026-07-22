@@ -435,14 +435,16 @@ public sealed class ReportService : IReportService
         return grouped;
     }
 
-    public async Task<List<ReportUnpaidRow>> GetUnpaidSalesAsync(CancellationToken ct = default)
+    public async Task<List<ReportUnpaidRow>> GetUnpaidSalesAsync(
+        DateTime from, DateTime to, CancellationToken ct = default)
     {
         var dev = await GetDeviseAsync(ct);
         var now = DateTime.Today;
+        var toEnd = to.Date.AddDays(1);
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         var unpaid = await db.Factures.AsNoTracking()
-            .Where(f => !f.EstPayee)
+            .Where(f => !f.EstPayee && f.Date >= from.Date && f.Date < toEnd)
             .OrderBy(f => f.DateEcheance)
             .Take(200)
             .Select(f => new
@@ -502,6 +504,93 @@ public sealed class ReportService : IReportService
         return rows;
     }
 
+    public async Task<List<ReportClientSoldeRow>> GetClientSoldesAsync(
+        DateTime from, DateTime to, CancellationToken ct = default)
+    {
+        var dev = await GetDeviseAsync(ct);
+        if (from.Date > to.Date)
+            (from, to) = (to, from);
+        var toEnd = to.Date.AddDays(1);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var clients = await db.Tiers.AsNoTracking()
+            .Where(t => t.Type == TypeTiers.Client || t.Type == TypeTiers.LesDeux)
+            .Select(t => new { t.Id, t.Nom, t.ICE, t.Ville })
+            .ToListAsync(ct);
+
+        if (clients.Count == 0)
+            return [];
+
+        var clientIds = clients.Select(c => c.Id).ToList();
+        var soldeByClient = clients.ToDictionary(c => c.Id, _ => 0m);
+
+        // Solde à la date « Au » (tous les documents jusqu'à la fin de la période)
+        var factures = await db.Factures.AsNoTracking()
+            .Where(f => clientIds.Contains(f.ClientId) && f.Date < toEnd)
+            .Select(f => new { f.ClientId, f.TotalTtc })
+            .ToListAsync(ct);
+
+        foreach (var f in factures)
+        {
+            if (f.TotalTtc > 0)
+                soldeByClient[f.ClientId] += f.TotalTtc;
+        }
+
+        var paiements = await (
+                from p in db.Paiements.AsNoTracking()
+                join f in db.Factures.AsNoTracking() on p.FactureId equals f.Id
+                where p.Date < toEnd && clientIds.Contains(f.ClientId)
+                select new { f.ClientId, p.Montant })
+            .ToListAsync(ct);
+
+        foreach (var p in paiements)
+        {
+            if (p.Montant > 0)
+                soldeByClient[p.ClientId] -= p.Montant;
+        }
+
+        var avoirs = await db.Avoirs.AsNoTracking()
+            .Where(a => clientIds.Contains(a.ClientId) && a.Date < toEnd)
+            .Select(a => new
+            {
+                a.ClientId,
+                Lignes = a.Lignes!.Select(l => new
+                {
+                    l.Quantite,
+                    l.PrixUnitaireHT,
+                    l.Remise,
+                    l.TauxTVA
+                }).ToList()
+            })
+            .ToListAsync(ct);
+
+        foreach (var a in avoirs)
+        {
+            var lignes = a.Lignes.Select(l => new AvoirLigne
+            {
+                Quantite = l.Quantite,
+                PrixUnitaireHT = l.PrixUnitaireHT,
+                Remise = l.Remise,
+                TauxTVA = l.TauxTVA
+            }).ToList();
+            var (_, _, ttc) = DocumentTotalsHelper.AvoirTotals(lignes);
+            if (ttc > 0)
+                soldeByClient[a.ClientId] -= ttc;
+        }
+
+        return clients
+            .Select(c => new { Client = c, Solde = soldeByClient[c.Id] })
+            .Where(x => Math.Abs(x.Solde) > 0.01m)
+            .OrderByDescending(x => x.Solde)
+            .Select(x => new ReportClientSoldeRow(
+                x.Client.Nom ?? string.Empty,
+                x.Client.ICE ?? string.Empty,
+                x.Client.Ville ?? string.Empty,
+                x.Solde,
+                dev))
+            .ToList();
+    }
+
     public async Task<List<ReportStockMovementRow>> GetStockMovementsAsync(
         DateTime from, DateTime to, CancellationToken ct = default)
     {
@@ -536,21 +625,51 @@ public sealed class ReportService : IReportService
         }).ToList();
     }
 
-    public async Task<(decimal ht, decimal ttc, string devise)> GetStockValuationAsync(CancellationToken ct = default)
+    public async Task<(decimal ht, decimal ttc, string devise)> GetStockValuationAsync(
+        DateTime? asOf = null, CancellationToken ct = default)
     {
         var dev = await GetDeviseAsync(ct);
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
         var produits = await db.Produits.AsNoTracking()
-            .Where(p => p.StockActuel > 0)
-            .Select(p => new { p.StockActuel, p.PrixAchatHT, p.PrixVenteHT, p.TauxTVA })
+            .Select(p => new { p.Id, p.StockActuel, p.PrixAchatHT, p.PrixVenteHT, p.TauxTVA })
             .ToListAsync(ct);
+
+        Dictionary<int, decimal>? undoByProduct = null;
+        if (asOf is { } asOfDate)
+        {
+            var toEnd = asOfDate.Date.AddDays(1);
+            // Reverse movements that happened after the as-of day to rebuild qty as of that date.
+            var later = await db.MouvementsStock.AsNoTracking()
+                .Where(m => m.CreatedAt >= toEnd)
+                .Select(m => new { m.ProduitId, m.Type, m.Quantite })
+                .ToListAsync(ct);
+
+            undoByProduct = later
+                .GroupBy(m => m.ProduitId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Sum(m => m.Type switch
+                    {
+                        TypeMouvement.Sortie => -Math.Abs(m.Quantite),
+                        TypeMouvement.Entree => Math.Abs(m.Quantite),
+                        TypeMouvement.Ajustement => m.Quantite,
+                        _ => 0m
+                    }));
+        }
 
         decimal totalHt = 0, totalTtc = 0;
         foreach (var p in produits)
         {
-            totalHt += p.StockActuel * p.PrixAchatHT;
-            totalTtc += p.StockActuel * p.PrixVenteHT * (1 + p.TauxTVA / 100m);
+            var qty = p.StockActuel;
+            if (undoByProduct != null && undoByProduct.TryGetValue(p.Id, out var signedAfter))
+                qty -= signedAfter;
+
+            if (qty <= 0) continue;
+            totalHt += qty * p.PrixAchatHT;
+            totalTtc += qty * p.PrixVenteHT * (1 + p.TauxTVA / 100m);
         }
+
         return (totalHt, totalTtc, dev);
     }
 

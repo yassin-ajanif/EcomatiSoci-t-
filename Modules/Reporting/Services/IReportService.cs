@@ -16,12 +16,21 @@ public interface IReportService
     Task<List<ReportDailySaleRow>> GetDailySalesAsync(
         DateTime from, DateTime to, CancellationToken ct = default);
 
-    Task<List<ReportUnpaidRow>> GetUnpaidSalesAsync(CancellationToken ct = default);
+    Task<List<ReportUnpaidRow>> GetUnpaidSalesAsync(
+        DateTime from, DateTime to, CancellationToken ct = default);
+
+    Task<List<ReportClientSoldeRow>> GetClientSoldesAsync(
+        DateTime from, DateTime to, CancellationToken ct = default);
 
     Task<List<ReportStockMovementRow>> GetStockMovementsAsync(
         DateTime from, DateTime to, CancellationToken ct = default);
 
-    Task<(decimal ht, decimal ttc, string devise)> GetStockValuationAsync(CancellationToken ct = default);
+    /// <param name="asOf">
+    /// When set, stock qty is reconstructed as of this date (end of day).
+    /// When null, uses current <c>StockActuel</c>.
+    /// </param>
+    Task<(decimal ht, decimal ttc, string devise)> GetStockValuationAsync(
+        DateTime? asOf = null, CancellationToken ct = default);
 
     Task<ReportProfitChargesResult> GetProfitChargesAsync(
         DateTime from, DateTime to, CancellationToken ct = default);

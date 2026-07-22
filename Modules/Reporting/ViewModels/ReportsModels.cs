@@ -327,3 +327,23 @@ public sealed class ReportStockMovementRow
     public string LblQty { get; }
     public string LblStockApres { get; }
 }
+
+public sealed class ReportClientSoldeRow
+{
+    public ReportClientSoldeRow(string client, string ice, string ville, decimal solde, string devise)
+    {
+        Client = client;
+        Ice = ice;
+        Ville = ville;
+        Solde = solde;
+        Devise = devise;
+        LblSolde = $"{solde:N2} {devise}";
+    }
+
+    public string Client { get; }
+    public string Ice { get; }
+    public string Ville { get; }
+    public decimal Solde { get; }
+    public string Devise { get; }
+    public string LblSolde { get; }
+}
