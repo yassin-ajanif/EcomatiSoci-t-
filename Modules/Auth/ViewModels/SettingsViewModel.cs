@@ -401,7 +401,7 @@ public partial class SettingsViewModel : BaseViewModel
 
     private async Task ResetDatabaseAsync(CancellationToken cancellationToken)
     {
-        var dbPath = Path.Combine(DatabasePath.GetDirectory(), "data.db");
+        var dbPath = DatabasePath.GetFilePath();
 
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
@@ -429,7 +429,7 @@ public partial class SettingsViewModel : BaseViewModel
     private static void CleanupAppDataFiles()
     {
         var root = DatabasePath.GetDirectory();
-        var dbPath = Path.Combine(root, "data.db");
+        var dbPath = DatabasePath.GetFilePath();
         var logPath = Path.Combine(root, "logError");
 
         if (!Directory.Exists(root))

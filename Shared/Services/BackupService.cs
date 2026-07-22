@@ -21,7 +21,7 @@ public sealed class BackupService : IBackupService
 
         Directory.CreateDirectory(backupDir);
 
-        var dbPath = Path.Combine(DatabasePath.GetDirectory(), "data.db");
+        var dbPath = DatabasePath.GetFilePath();
         if (!File.Exists(dbPath))
             return null;
 
