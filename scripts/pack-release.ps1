@@ -9,7 +9,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PublishDir = Join-Path $ProjectRoot "publish"
 $ReleaseDir = Join-Path $ProjectRoot "releases"
 
-$PackId = "Ecomati"
+$PackId = "EcomatiSociete"
 $PackTitle = "Ecomati société"
 
 Push-Location $ProjectRoot
