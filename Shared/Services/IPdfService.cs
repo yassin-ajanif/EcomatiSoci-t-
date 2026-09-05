@@ -33,4 +33,8 @@ public interface IPdfService
         ClientAccountStatementResult statement,
         DocumentPartyPdfInfo party,
         CancellationToken cancellationToken = default);
+
+    Task<byte[]> BuildReportPdfAsync(
+        ReportPdfModel model,
+        CancellationToken cancellationToken = default);
 }
