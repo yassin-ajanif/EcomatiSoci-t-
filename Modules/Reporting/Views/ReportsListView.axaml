@@ -7,7 +7,7 @@
              x:Name="ThisControl"
              x:DataType="vm:ReportsListViewModel"
              x:CompileBindings="False">
-  <Grid>
+  <Grid Focusable="True" PointerPressed="OnRootPointerPressed">
     <ScrollViewer>
       <StackPanel Spacing="12" Margin="4,8,4,32" MinWidth="520">
 
@@ -468,8 +468,17 @@
                   <StackPanel Spacing="4">
                     <TextBlock Text="{Binding LblClientSoldesTotalLabel}" FontSize="11"
                                Foreground="#1D4ED8" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding LblClientSoldesTotal}" FontWeight="Bold" FontSize="15"
-                               Foreground="{DynamicResource CourseraPrimaryBrush}"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <NumericUpDown Value="{Binding ActuelCaisse}" FormatString="N2" Minimum="0"
+                                     Increment="1" ShowButtonSpinner="False"
+                                     FontWeight="Bold" FontSize="15"
+                                     Foreground="{DynamicResource CourseraPrimaryBrush}"
+                                     Background="Transparent" BorderThickness="0" Padding="0"/>
+                      <TextBlock Grid.Column="1" Text="{Binding LblClientSoldesDevise}"
+                                 FontWeight="Bold" FontSize="13" VerticalAlignment="Center"
+                                 Margin="6,0,0,0"
+                                 Foreground="{DynamicResource CourseraPrimaryBrush}"/>
+                    </Grid>
                   </StackPanel>
                 </Border>
                 <Border Grid.Column="1" Margin="3,0" Padding="12,10" CornerRadius="10"

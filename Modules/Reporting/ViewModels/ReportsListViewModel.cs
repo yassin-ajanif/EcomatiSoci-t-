@@ -92,7 +92,8 @@ public partial class ReportsListViewModel : BaseViewModel
     [ObservableProperty] private string _lblStockValHt = string.Empty;
     [ObservableProperty] private string _lblStockValTtc = string.Empty;
     [ObservableProperty] private string _lblClientSoldesTotalLabel = string.Empty;
-    [ObservableProperty] private string _lblClientSoldesTotal = string.Empty;
+    [ObservableProperty] private decimal _actuelCaisse;
+    [ObservableProperty] private string _lblClientSoldesDevise = string.Empty;
     [ObservableProperty] private string _lblClientSoldesStockHtLabel = string.Empty;
     [ObservableProperty] private string _lblClientSoldesStockHt = string.Empty;
     [ObservableProperty] private string _lblZakatBaseLabel = string.Empty;
@@ -140,6 +141,8 @@ public partial class ReportsListViewModel : BaseViewModel
     private List<ReportProfitChargeRow> _filteredProfitCharges = [];
     private ReportProfitChargesResult? _lastProfitCharges;
     private ReportProfitChargeKind? _profitFilterKind;
+    private decimal _zakatStockHt;
+    private string _zakatDevise = "MAD";
 
     public ObservableCollection<ReportSaleByProductRow> SalesByProduct { get; } = [];
     public ObservableCollection<ReportSaleByCustomerRow> SalesByCustomer { get; } = [];
@@ -173,12 +176,13 @@ public partial class ReportsListViewModel : BaseViewModel
         LblSaleByCustomerLabelProfit = _locale.T("Reports_LblTotalProfit");
         LblStockValHtLabel = _locale.T("Reports_LblStockValHt");
         LblStockValTtcLabel = _locale.T("Reports_LblStockValTtc");
-        LblClientSoldesTotalLabel = _locale.T("Reports_LblTotalClientSoldes");
-        LblClientSoldesStockHtLabel = _locale.T("Reports_LblStockValHt");
+        LblClientSoldesTotalLabel = _locale.T("Reports_LblActuelCaisse");
+        LblClientSoldesStockHtLabel = _locale.T("Reports_LblStockValAchat");
         LblZakatBaseLabel = _locale.T("Reports_LblZakatBase");
         LblZakatLabel = _locale.T("Reports_LblZakat");
         ColClientSoldesClient = _locale.T("Reports_ColClient");
         ColClientSoldesSolde = _locale.T("ClientLedger_ColBalance");
+        RefreshZakatTotals();
         LblProfitChargesMarginLabel = _locale.T("Reports_LblTotalSalesMargin");
         LblProfitChargesVenteLabel = _locale.T("Reports_LblTotalSales");
         LblProfitChargesAvoirsClientLabel = _locale.T("Reports_LblTotalAvoirsClient");
@@ -342,20 +346,28 @@ public partial class ReportsListViewModel : BaseViewModel
     {
         _allClientSoldes = await Task.Run(() => _reportService.GetClientSoldesAsync(from, to, ct), ct);
         var valuation = await Task.Run(() => _reportService.GetStockValuationAsync(to, ct), ct);
-        var totalSoldes = _allClientSoldes.Sum(r => r.Solde);
-        var stockHt = valuation.ht;
-        var zakatBase = totalSoldes + stockHt;
-        var zakat = zakatBase * 0.025m;
-        var dev = valuation.devise;
+        _zakatStockHt = valuation.ht;
+        _zakatDevise = valuation.devise;
         if (_allClientSoldes.Count > 0)
-            dev = _allClientSoldes[0].Devise;
+            _zakatDevise = _allClientSoldes[0].Devise;
 
-        LblClientSoldesTotal = $"{totalSoldes:N2} {dev}";
-        LblClientSoldesStockHt = $"{stockHt:N2} {dev}";
-        LblZakatBase = $"{zakatBase:N2} {dev}";
-        LblZakat = $"{zakat:N2} {dev}";
+        LblClientSoldesDevise = _zakatDevise;
+        LblClientSoldesStockHt = $"{_zakatStockHt:N2} {_zakatDevise}";
+        RefreshZakatTotals();
         EmptyMessage = _locale.T("Reports_EmptyClientSoldes");
         FinishPagedLoad(_allClientSoldes.Count);
+    }
+
+    partial void OnActuelCaisseChanged(decimal value) => RefreshZakatTotals();
+
+    private void RefreshZakatTotals()
+    {
+        var zakatBase = ActuelCaisse + _zakatStockHt;
+        var zakat = zakatBase * 0.025m;
+        var dev = string.IsNullOrWhiteSpace(_zakatDevise) ? "MAD" : _zakatDevise;
+        LblClientSoldesDevise = dev;
+        LblZakatBase = $"{zakatBase:N2} {dev}";
+        LblZakat = $"{zakat:N2} {dev}";
     }
 
     private async Task LoadStockMovementsAsync(DateTime from, DateTime to, CancellationToken ct)
@@ -662,7 +674,7 @@ public partial class ReportsListViewModel : BaseViewModel
             .ToList();
         var summary = new List<PdfKeyValueLine>
         {
-            new(LblClientSoldesTotalLabel, LblClientSoldesTotal),
+            new(LblClientSoldesTotalLabel, $"{ActuelCaisse:N2} {LblClientSoldesDevise}"),
             new(LblClientSoldesStockHtLabel, LblClientSoldesStockHt),
             new(LblZakatBaseLabel, LblZakatBase),
             new(LblZakatLabel, LblZakat)
